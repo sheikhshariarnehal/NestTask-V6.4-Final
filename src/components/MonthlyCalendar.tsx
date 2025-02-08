@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Task } from '../types/task';
+
+interface TaskSummary {
+  total: number;
+  completed: number;
+  overdue: number;
+  inProgress: number;
+}
 
 interface MonthlyCalendarProps {
   isOpen: boolean;
@@ -13,6 +20,8 @@ interface MonthlyCalendarProps {
 
 export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, tasks }: MonthlyCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(selectedDate);
+  const [hoveredDate, setHoveredDate] = useState<Date | null>(null);
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Get all days in the current month
   const daysInMonth = eachDayOfInterval({
@@ -20,28 +29,47 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
     end: endOfMonth(currentMonth)
   });
 
-  // Get tasks for a specific date
-  const getTasksForDate = (date: Date) => {
-    return tasks.filter(task => isSameDay(parseISO(task.dueDate), date));
+  // Get tasks summary for a specific date
+  const getTaskSummary = (date: Date): TaskSummary => {
+    const dayTasks = tasks.filter(task => isSameDay(parseISO(task.dueDate), date));
+    return {
+      total: dayTasks.length,
+      completed: dayTasks.filter(task => task.status === 'completed').length,
+      overdue: dayTasks.filter(task => 
+        task.status !== 'completed' && new Date(task.dueDate) < new Date()
+      ).length,
+      inProgress: dayTasks.filter(task => 
+        task.status !== 'completed' && new Date(task.dueDate) >= new Date()
+      ).length
+    };
   };
 
-  // Handle click outside to close
+  // Handle mouse enter with delay for tooltip
+  const handleMouseEnter = (date: Date) => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+    }
+    tooltipTimeoutRef.current = setTimeout(() => {
+      setHoveredDate(date);
+    }, 500); // Show tooltip after 500ms hover
+  };
+
+  // Handle mouse leave
+  const handleMouseLeave = () => {
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+    }
+    setHoveredDate(null);
+  };
+
+  // Cleanup timeout on unmount
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.monthly-calendar') && !target.closest('.month-text')) {
-        onClose();
+    return () => {
+      if (tooltipTimeoutRef.current) {
+        clearTimeout(tooltipTimeoutRef.current);
       }
     };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, onClose]);
+  }, []);
 
   return (
     <AnimatePresence>
@@ -93,48 +121,126 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
               {/* Calendar Days */}
               <div className="grid grid-cols-7 gap-2">
                 {daysInMonth.map((date, index) => {
-                  const dayTasks = getTasksForDate(date);
-                  const hasOverdueTasks = dayTasks.some(task => 
-                    task.status !== 'completed' && new Date(task.dueDate) < new Date()
-                  );
-                  const hasCompletedTasks = dayTasks.some(task => task.status === 'completed');
+                  const summary = getTaskSummary(date);
+                  const hasOverdueTasks = summary.overdue > 0;
 
                   return (
                     <motion.button
                       key={date.toISOString()}
-                      whileHover={{ scale: 1.1 }}
+                      whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => {
                         onSelectDate(date);
                         onClose();
                       }}
+                      onMouseEnter={() => handleMouseEnter(date)}
+                      onMouseLeave={handleMouseLeave}
                       className={`
-                        relative aspect-square rounded-lg p-1
-                        flex flex-col items-center justify-center
-                        transition-colors duration-200
+                        relative aspect-square rounded-lg
+                        flex flex-col items-center justify-center gap-1
+                        transition-all duration-200 ease-in-out
                         ${isSameDay(date, selectedDate)
-                          ? 'bg-blue-500 text-white'
+                          ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
                           : isToday(date)
                           ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                           : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                         }
                       `}
                     >
-                      <span className="text-sm font-medium">{format(date, 'd')}</span>
+                      {/* Date Number */}
+                      <span className={`
+                        text-sm font-medium 
+                        ${isSameDay(date, selectedDate)
+                          ? 'text-white'
+                          : isToday(date)
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-gray-700 dark:text-gray-300'
+                        }
+                      `}>
+                        {format(date, 'd')}
+                      </span>
                       
-                      {/* Task Indicators */}
-                      {dayTasks.length > 0 && (
-                        <div className="flex gap-0.5 mt-1">
-                          {hasOverdueTasks && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      {/* Task Status Indicators */}
+                      {summary.total > 0 && (
+                        <div className={`
+                          flex items-center justify-center
+                          min-h-[6px] min-w-[6px]
+                          gap-[3px]
+                        `}>
+                          {summary.completed > 0 && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="w-1.5 h-1.5 rounded-full bg-green-500/80 dark:bg-green-400/80 shadow-sm"
+                            />
                           )}
-                          {hasCompletedTasks && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          {summary.overdue > 0 && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="w-1.5 h-1.5 rounded-full bg-red-500/80 dark:bg-red-400/80 shadow-sm animate-pulse"
+                            />
                           )}
-                          {dayTasks.some(task => !task.status || task.status === 'in-progress') && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          {summary.inProgress > 0 && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="w-1.5 h-1.5 rounded-full bg-blue-500/80 dark:bg-blue-400/80 shadow-sm"
+                            />
                           )}
                         </div>
+                      )}
+
+                      {/* Tooltip */}
+                      <AnimatePresence>
+                        {hoveredDate && isSameDay(date, hoveredDate) && summary.total > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="absolute bottom-full mb-2 z-50 w-48 p-2
+                              bg-white dark:bg-gray-800 rounded-lg shadow-lg
+                              border border-gray-100 dark:border-gray-700
+                              text-left"
+                          >
+                            <div className="space-y-1 text-xs">
+                              <div className="font-medium text-gray-900 dark:text-gray-100">
+                                {format(date, 'MMMM d, yyyy')}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                                Completed: {summary.completed}
+                              </div>
+                              {summary.overdue > 0 && (
+                                <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                                  Overdue: {summary.overdue}
+                                </div>
+                              )}
+                              {summary.inProgress > 0 && (
+                                <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                  In Progress: {summary.inProgress}
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Selected/Today Indicator Ring */}
+                      {(isSameDay(date, selectedDate) || isToday(date)) && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className={`
+                            absolute inset-0 rounded-lg
+                            ${isSameDay(date, selectedDate)
+                              ? 'ring-2 ring-blue-400/50 dark:ring-blue-500/50'
+                              : 'ring-1 ring-blue-400/30 dark:ring-blue-500/30'
+                            }
+                          `}
+                        />
                       )}
                     </motion.button>
                   );
