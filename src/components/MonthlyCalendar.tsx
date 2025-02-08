@@ -21,7 +21,21 @@ interface MonthlyCalendarProps {
 export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, tasks }: MonthlyCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(selectedDate);
   const [hoveredDate, setHoveredDate] = useState<Date | null>(null);
+  const [longPressedDate, setLongPressedDate] = useState<Date | null>(null);
   const tooltipTimeoutRef = useRef<NodeJS.Timeout>();
+  const longPressTimeoutRef = useRef<NodeJS.Timeout>();
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const isMobileRef = useRef(false);
+
+  // Check if device is mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      isMobileRef.current = window.innerWidth <= 768;
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Get all days in the current month
   const daysInMonth = eachDayOfInterval({
@@ -62,11 +76,48 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
     setHoveredDate(null);
   };
 
-  // Cleanup timeout on unmount
+  // Handle touch start for long press
+  const handleTouchStart = (date: Date) => {
+    if (!isMobileRef.current) return;
+    
+    longPressTimeoutRef.current = setTimeout(() => {
+      setLongPressedDate(date);
+    }, 500); // 500ms for long press
+  };
+
+  // Handle touch end
+  const handleTouchEnd = () => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+    }
+    setLongPressedDate(null);
+  };
+
+  // Handle click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  // Cleanup timeouts
   useEffect(() => {
     return () => {
       if (tooltipTimeoutRef.current) {
         clearTimeout(tooltipTimeoutRef.current);
+      }
+      if (longPressTimeoutRef.current) {
+        clearTimeout(longPressTimeoutRef.current);
       }
     };
   }, []);
@@ -81,7 +132,8 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
           transition={{ type: "spring", duration: 0.5 }}
           className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/20 backdrop-blur-sm"
         >
-          <div className="monthly-calendar w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
+          <div className="monthly-calendar w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+               ref={calendarRef}>
             {/* Calendar Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
               <button
@@ -133,6 +185,8 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
                         onSelectDate(date);
                         onClose();
                       }}
+                      onTouchStart={() => handleTouchStart(date)}
+                      onTouchEnd={handleTouchEnd}
                       onMouseEnter={() => handleMouseEnter(date)}
                       onMouseLeave={handleMouseLeave}
                       className={`
@@ -191,9 +245,11 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
                         </div>
                       )}
 
-                      {/* Tooltip */}
+                      {/* Tooltip - Show on hover for desktop or long press for mobile */}
                       <AnimatePresence>
-                        {hoveredDate && isSameDay(date, hoveredDate) && summary.total > 0 && (
+                        {((hoveredDate && isSameDay(date, hoveredDate)) || 
+                          (longPressedDate && isSameDay(date, longPressedDate))) && 
+                          summary.total > 0 && (
                           <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -201,7 +257,7 @@ export function MonthlyCalendar({ isOpen, onClose, selectedDate, onSelectDate, t
                             className="absolute bottom-full mb-2 z-50 w-48 p-2
                               bg-white dark:bg-gray-800 rounded-lg shadow-lg
                               border border-gray-100 dark:border-gray-700
-                              text-left"
+                              text-left touch-none"
                           >
                             <div className="space-y-1 text-xs">
                               <div className="font-medium text-gray-900 dark:text-gray-100">
