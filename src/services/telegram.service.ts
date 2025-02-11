@@ -93,6 +93,7 @@ export async function sendTelegramMessage(text: string, photo?: string) {
 const getCategoryEmoji = (category: string) => {
   switch (category) {
     case 'presentation': return '👔';
+    case 'project': return '📋';
     case 'assignment': return '📃';
     case 'quiz': return '📚';
     case 'lab-report': return '🔬';
@@ -133,7 +134,6 @@ export async function sendTaskNotification(task: Task) {
 
 💬 <b>Description:</b>
 ${processDescription(task.description)}
-
 🏷️ <b>Category:</b> #${task.category}
 📅 <b>Due Date:</b> ${formatDate(new Date(task.dueDate), 'MMMM d, yyyy')}
 
