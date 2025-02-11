@@ -93,6 +93,7 @@ export async function sendTelegramMessage(text: string, photo?: string) {
 const getCategoryEmoji = (category: string) => {
   switch (category) {
     case 'presentation': return '👔';
+    case 'project': return '📋';
     case 'assignment': return '📃';
     case 'quiz': return '📚';
     case 'lab-report': return '🔬';
